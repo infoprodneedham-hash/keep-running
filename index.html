@@ -1,94 +1,157 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>80s Retro Racer</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEON STREAK - 80s Arcade</title>
     <style>
-        body { background: #111; display: flex; flex-direction: column; align-items: center; color: #0FF; font-family: 'Courier New', monospace; }
-        canvas { border: 4px solid #F0F; box-shadow: 0 0 20px #F0F; background: #222; margin-top: 20px; }
-        .stats { font-size: 20px; margin-top: 10px; }
+        body { 
+            background: #0a0a0a; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            color: #0FF; 
+            font-family: 'Courier New', monospace; 
+            margin: 0;
+            overflow: hidden;
+        }
+        h1 { margin: 10px 0; text-shadow: 0 0 10px #0FF; }
+        .stats { font-size: 24px; margin-bottom: 10px; }
+        canvas { 
+            border: 4px solid #F0F; 
+            box-shadow: 0 0 30px #F0F; 
+            background: #111; 
+            cursor: none;
+        }
+        .controls { color: #666; margin-top: 10px; font-size: 14px; }
     </style>
 </head>
 <body>
+
     <h1>NEON STREAK</h1>
     <div class="stats">LIVES: <span id="lives">3</span> | SCORE: <span id="score">0</span></div>
+    
     <canvas id="gameCanvas" width="400" height="600"></canvas>
-    <p>Use LEFT and RIGHT arrows to weave!</p>
+    
+    <div class="controls">LEFT / RIGHT ARROWS TO MOVE</div>
 
 <script>
+/** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Game State
-let lanes = [100, 200, 300];
+// --- Game Constants & State ---
+const lanes = [100, 200, 300];
 let playerLane = 1;
 let lives = 3;
 let score = 0;
-let speed = 5;
-let enemyY = -100;
+let speed = 6;
+let enemyY = -150;
 let enemyLane = Math.floor(Math.random() * 3);
 let gameActive = true;
+let laneOffset = 0;
 
-// --- Audio Engine ---
+// --- Audio Engine (Web Audio API) ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let engineOsc = null;
+
+function initAudio() {
+    if (engineOsc) return; // Already started
+    
+    // Engine Hum (Low sawtooth)
+    engineOsc = audioCtx.createOscillator();
+    const engineGain = audioCtx.createGain();
+    engineOsc.type = 'sawtooth';
+    engineOsc.frequency.setValueAtTime(55, audioCtx.currentTime); 
+    engineGain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+    
+    engineOsc.connect(engineGain);
+    engineGain.connect(audioCtx.destination);
+    engineOsc.start();
+}
 
 function playHorn() {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-    osc.type = 'square'; // Harsh 80s sound
+    
+    osc.type = 'square';
     osc.frequency.setValueAtTime(440, audioCtx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
+    
     gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+    
     osc.connect(gain);
     gain.connect(audioCtx.destination);
+    
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.2);
+    osc.stop(audioCtx.currentTime + 0.3);
 }
 
-// Low-frequency engine hum
-let engineOsc;
-function startEngine() {
-    engineOsc = audioCtx.createOscillator();
-    let gain = audioCtx.createGain();
-    engineOsc.type = 'sawtooth';
-    engineOsc.frequency.value = 60; 
-    gain.gain.value = 0.05;
-    engineOsc.connect(gain);
-    gain.connect(audioCtx.destination);
-    engineOsc.start();
-}
-
-// --- Input ---
+// --- Input Handling ---
 window.addEventListener("keydown", (e) => {
-    if (audioCtx.state === 'suspended') audioCtx.resume(); // Unlock audio
-    if (!engineOsc) startEngine();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    initAudio();
 
     if (e.key === "ArrowLeft" && playerLane > 0) playerLane--;
     if (e.key === "ArrowRight" && playerLane < 2) playerLane++;
 });
 
-// --- Game Loop ---
+// --- Drawing Helpers ---
+function drawCar(x, y, bodyColor, detailColor) {
+    const carW = 40;
+    const carH = 70;
+    
+    ctx.save();
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = bodyColor;
+
+    // Wheels (4 black rectangles)
+    ctx.fillStyle = "#000";
+    ctx.fillRect(x - 25, y + 10, 10, 18); // Top Left
+    ctx.fillRect(x + 15, y + 10, 10, 18); // Top Right
+    ctx.fillRect(x - 25, y + 45, 10, 18); // Bottom Left
+    ctx.fillRect(x + 15, y + 45, 10, 18); // Bottom Right
+
+    // Main Body
+    ctx.fillStyle = bodyColor;
+    ctx.fillRect(x - 20, y, carW, carH);
+
+    // Windshield / Roof
+    ctx.fillStyle = detailColor;
+    ctx.fillRect(x - 15, y + 15, 30, 20);
+
+    ctx.restore();
+}
+
+// --- Main Loop ---
 function update() {
     if (!gameActive) return;
 
+    // 1. Move Environment
+    laneOffset += speed;
     enemyY += speed;
-    speed += 0.002; // Gradually gets faster
+    speed += 0.001; // Tiny speed increment
 
-    // Score and Horn logic
+    // 2. Score & Horn (When enemy passes)
     if (enemyY > canvas.height) {
-        enemyY = -100;
+        enemyY = -150;
         enemyLane = Math.floor(Math.random() * 3);
         score++;
         document.getElementById("score").innerText = score;
         playHorn();
+        
+        // Slightly increase engine pitch as you go faster
+        if(engineOsc) engineOsc.frequency.value = 55 + (speed * 2);
     }
 
-    // Collision Detection
-    if (enemyLane === playerLane && enemyY > 450 && enemyY < 550) {
+    // 3. Collision Logic
+    if (enemyLane === playerLane && enemyY > 430 && enemyY < 570) {
         lives--;
         document.getElementById("lives").innerText = lives;
-        enemyY = -100;
+        enemyY = -150;
         enemyLane = Math.floor(Math.random() * 3);
+        
         if (lives <= 0) {
             gameActive = false;
             alert("GAME OVER! Final Score: " + score);
@@ -96,88 +159,37 @@ function update() {
         }
     }
 
-   function draw() {
-    // 1. Background
-    ctx.fillStyle = "#222";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // 2. Road & Moving Lane Markers
-    ctx.strokeStyle = "#FFFF00";
-    ctx.setLineDash([20, 20]);
-    // This offset creates the illusion of movement
-    ctx.lineDashOffset = -(Date.now() / 10) % 40; 
-    ctx.beginPath();
-    ctx.moveTo(150, 0); ctx.lineTo(150, 600);
-    ctx.moveTo(250, 0); ctx.lineTo(250, 600);
-    ctx.stroke();
-
-    // 3. Draw Player Car
-    drawCar(lanes[playerLane], 500, "#FF0066", "#FF99CC");
-
-    // 4. Draw Enemy Car
-    drawCar(lanes[enemyLane], enemyY, "#00FFFF", "#99FFFF");
-}
-
-function drawCar(x, y, bodyColor, detailColor) {
-    const carWidth = 40;
-    const carHeight = 70;
-    const wheelWidth = 10;
-    const wheelHeight = 15;
-
-    ctx.save();
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = bodyColor;
-
-    // Draw 4 Wheels (Black with a tiny highlight)
-    ctx.fillStyle = "#111";
-    // Top Left
-    ctx.fillRect(x - 25, y + 5, wheelWidth, wheelHeight);
-    // Top Right
-    ctx.fillRect(x + 15, y + 5, wheelWidth, wheelHeight);
-    // Bottom Left
-    ctx.fillRect(x - 25, y + 50, wheelWidth, wheelHeight);
-    // Bottom Right
-    ctx.fillRect(x + 15, y + 50, wheelWidth, wheelHeight);
-
-    // Draw Car Body
-    ctx.fillStyle = bodyColor;
-    ctx.fillRect(x - 20, y, carWidth, carHeight);
-
-    // Draw Windshield (Detail)
-    ctx.fillStyle = detailColor;
-    ctx.fillRect(x - 15, y + 15, 30, 15);
-
-    ctx.restore();
-}
+    draw();
+    requestAnimationFrame(update);
 }
 
 function draw() {
-    // Background
-    ctx.fillStyle = "#222";
+    // Clear Canvas
+    ctx.fillStyle = "#111";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Road & Lanes
+    // Draw Road Background
+    ctx.fillStyle = "#222";
+    ctx.fillRect(75, 0, 250, canvas.height);
+
+    // Draw Animated Lane Markers
     ctx.strokeStyle = "#FFFF00";
-    ctx.setLineDash([20, 20]);
+    ctx.setLineDash([30, 30]);
+    ctx.lineDashOffset = -laneOffset;
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(150, 0); ctx.lineTo(150, 600);
     ctx.moveTo(250, 0); ctx.lineTo(250, 600);
     ctx.stroke();
 
-    // Player Car (Red Neon)
-    ctx.fillStyle = "#FF0066";
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#FF0066";
-    ctx.fillRect(lanes[playerLane] - 20, 500, 40, 70);
+    // Draw Player
+    drawCar(lanes[playerLane], 500, "#FF0066", "#FF99CC");
 
-    // Enemy Car (Cyan Neon)
-    ctx.fillStyle = "#00FFFF";
-    ctx.shadowColor = "#00FFFF";
-    ctx.fillRect(lanes[enemyLane] - 20, enemyY, 40, 70);
-    
-    ctx.shadowBlur = 0; // Reset for other drawings
+    // Draw Enemy
+    drawCar(lanes[enemyLane], enemyY, "#00FFFF", "#99FFFF");
 }
 
+// Start Game
 update();
 </script>
 </body>
