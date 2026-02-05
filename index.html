@@ -1,86 +1,133 @@
-import pygame
-import random
+<!DOCTYPE html>
+<html>
+<head>
+    <title>80s Retro Racer</title>
+    <style>
+        body { background: #111; display: flex; flex-direction: column; align-items: center; color: #0FF; font-family: 'Courier New', monospace; }
+        canvas { border: 4px solid #F0F; box-shadow: 0 0 20px #F0F; background: #222; margin-top: 20px; }
+        .stats { font-size: 20px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>NEON STREAK</h1>
+    <div class="stats">LIVES: <span id="lives">3</span> | SCORE: <span id="score">0</span></div>
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+    <p>Use LEFT and RIGHT arrows to weave!</p>
 
-# Initial Setup
-pygame.init()
-WIDTH, HEIGHT = 400, 600
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-clock = pygame.time.Clock()
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
 
-# Colors (80s Neon Palette)
-BLACK = (0, 0, 0)
-GRAY = (50, 50, 50)
-YELLOW = (255, 255, 0) # Lane markers
-RED = (255, 0, 100)    # Player car
-CYAN = (0, 255, 255)   # Enemy cars
+// Game State
+let lanes = [100, 200, 300];
+let playerLane = 1;
+let lives = 3;
+let score = 0;
+let speed = 5;
+let enemyY = -100;
+let enemyLane = Math.floor(Math.random() * 3);
+let gameActive = true;
 
-# Game Variables
-lanes = [100, 200, 300] # X-coordinates for the three lanes
-player_lane = 1         # Start in the middle lane
-car_y = 500
-enemy_speed = 5
-score = 0
-lives = 3
+// --- Audio Engine ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-# Fake Sound Effects (Placeholders for logic)
-def play_engine_hum():
-    # In a real game, this would be a looping low-freq sample
-    pass
+function playHorn() {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square'; // Harsh 80s sound
+    osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.2);
+}
 
-def play_horn():
-    # Triggered when an enemy car is passed
-    print("BEEP BEEP!") 
+// Low-frequency engine hum
+let engineOsc;
+function startEngine() {
+    engineOsc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    engineOsc.type = 'sawtooth';
+    engineOsc.frequency.value = 60; 
+    gain.gain.value = 0.05;
+    engineOsc.connect(gain);
+    gain.connect(audioCtx.destination);
+    engineOsc.start();
+}
 
-# Enemy Sprite logic
-enemy_car = {"x": random.choice(lanes), "y": -100}
+// --- Input ---
+window.addEventListener("keydown", (e) => {
+    if (audioCtx.state === 'suspended') audioCtx.resume(); // Unlock audio
+    if (!engineOsc) startEngine();
 
-running = True
-while running:
-    screen.fill(BLACK)
+    if (e.key === "ArrowLeft" && playerLane > 0) playerLane--;
+    if (e.key === "ArrowRight" && playerLane < 2) playerLane++;
+});
+
+// --- Game Loop ---
+function update() {
+    if (!gameActive) return;
+
+    enemyY += speed;
+    speed += 0.002; // Gradually gets faster
+
+    // Score and Horn logic
+    if (enemyY > canvas.height) {
+        enemyY = -100;
+        enemyLane = Math.floor(Math.random() * 3);
+        score++;
+        document.getElementById("score").innerText = score;
+        playHorn();
+    }
+
+    // Collision Detection
+    if (enemyLane === playerLane && enemyY > 450 && enemyY < 550) {
+        lives--;
+        document.getElementById("lives").innerText = lives;
+        enemyY = -100;
+        enemyLane = Math.floor(Math.random() * 3);
+        if (lives <= 0) {
+            gameActive = false;
+            alert("GAME OVER! Final Score: " + score);
+            location.reload();
+        }
+    }
+
+    draw();
+    requestAnimationFrame(update);
+}
+
+function draw() {
+    // Background
+    ctx.fillStyle = "#222";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Road & Lanes
+    ctx.strokeStyle = "#FFFF00";
+    ctx.setLineDash([20, 20]);
+    ctx.beginPath();
+    ctx.moveTo(150, 0); ctx.lineTo(150, 600);
+    ctx.moveTo(250, 0); ctx.lineTo(250, 600);
+    ctx.stroke();
+
+    // Player Car (Red Neon)
+    ctx.fillStyle = "#FF0066";
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "#FF0066";
+    ctx.fillRect(lanes[playerLane] - 20, 500, 40, 70);
+
+    // Enemy Car (Cyan Neon)
+    ctx.fillStyle = "#00FFFF";
+    ctx.shadowColor = "#00FFFF";
+    ctx.fillRect(lanes[enemyLane] - 20, enemyY, 40, 70);
     
-    # 1. Input Handling
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_LEFT and player_lane > 0:
-                player_lane -= 1
-            if event.key == pygame.K_RIGHT and player_lane < 2:
-                player_lane += 1
+    ctx.shadowBlur = 0; // Reset for other drawings
+}
 
-    # 2. Game Logic (The "Speed Up")
-    enemy_car["y"] += enemy_speed
-    enemy_speed += 0.002 # Subtle acceleration over time
-    
-    # Check if car passed player
-    if enemy_car["y"] > HEIGHT:
-        enemy_car["y"] = -100
-        enemy_car["x"] = random.choice(lanes)
-        score += 1
-        play_horn()
-
-    # 3. Collision Detection
-    player_x = lanes[player_lane]
-    if enemy_car["x"] == player_x and (car_y < enemy_car["y"] + 50 and car_y + 50 > enemy_car["y"]):
-        lives -= 1
-        enemy_car["y"] = -100 # Reset enemy after crash
-        print(f"CRASH! Lives left: {lives}")
-        if lives == 0:
-            print(f"GAME OVER. Final Score: {score}")
-            running = False
-
-    # 4. Rendering
-    # Draw Road
-    pygame.draw.rect(screen, GRAY, (75, 0, 250, HEIGHT))
-    
-    # Draw Player (Red Block)
-    pygame.draw.rect(screen, RED, (lanes[player_lane] - 20, car_y, 40, 60))
-    
-    # Draw Enemy (Cyan Block)
-    pygame.draw.rect(screen, CYAN, (enemy_car["x"] - 20, enemy_car["y"], 40, 60))
-
-    pygame.display.flip()
-    clock.tick(60)
-    play_engine_hum()
-
-pygame.quit()
+update();
+</script>
+</body>
+</html>
