@@ -1,0 +1,86 @@
+import pygame
+import random
+
+# Initial Setup
+pygame.init()
+WIDTH, HEIGHT = 400, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+clock = pygame.time.Clock()
+
+# Colors (80s Neon Palette)
+BLACK = (0, 0, 0)
+GRAY = (50, 50, 50)
+YELLOW = (255, 255, 0) # Lane markers
+RED = (255, 0, 100)    # Player car
+CYAN = (0, 255, 255)   # Enemy cars
+
+# Game Variables
+lanes = [100, 200, 300] # X-coordinates for the three lanes
+player_lane = 1         # Start in the middle lane
+car_y = 500
+enemy_speed = 5
+score = 0
+lives = 3
+
+# Fake Sound Effects (Placeholders for logic)
+def play_engine_hum():
+    # In a real game, this would be a looping low-freq sample
+    pass
+
+def play_horn():
+    # Triggered when an enemy car is passed
+    print("BEEP BEEP!") 
+
+# Enemy Sprite logic
+enemy_car = {"x": random.choice(lanes), "y": -100}
+
+running = True
+while running:
+    screen.fill(BLACK)
+    
+    # 1. Input Handling
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_LEFT and player_lane > 0:
+                player_lane -= 1
+            if event.key == pygame.K_RIGHT and player_lane < 2:
+                player_lane += 1
+
+    # 2. Game Logic (The "Speed Up")
+    enemy_car["y"] += enemy_speed
+    enemy_speed += 0.002 # Subtle acceleration over time
+    
+    # Check if car passed player
+    if enemy_car["y"] > HEIGHT:
+        enemy_car["y"] = -100
+        enemy_car["x"] = random.choice(lanes)
+        score += 1
+        play_horn()
+
+    # 3. Collision Detection
+    player_x = lanes[player_lane]
+    if enemy_car["x"] == player_x and (car_y < enemy_car["y"] + 50 and car_y + 50 > enemy_car["y"]):
+        lives -= 1
+        enemy_car["y"] = -100 # Reset enemy after crash
+        print(f"CRASH! Lives left: {lives}")
+        if lives == 0:
+            print(f"GAME OVER. Final Score: {score}")
+            running = False
+
+    # 4. Rendering
+    # Draw Road
+    pygame.draw.rect(screen, GRAY, (75, 0, 250, HEIGHT))
+    
+    # Draw Player (Red Block)
+    pygame.draw.rect(screen, RED, (lanes[player_lane] - 20, car_y, 40, 60))
+    
+    # Draw Enemy (Cyan Block)
+    pygame.draw.rect(screen, CYAN, (enemy_car["x"] - 20, enemy_car["y"], 40, 60))
+
+    pygame.display.flip()
+    clock.tick(60)
+    play_engine_hum()
+
+pygame.quit()
