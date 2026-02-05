@@ -2,195 +2,159 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEON STREAK - 80s Arcade</title>
+    <title>80s ARCADE RACER</title>
     <style>
-        body { 
-            background: #0a0a0a; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            color: #0FF; 
-            font-family: 'Courier New', monospace; 
-            margin: 0;
-            overflow: hidden;
-        }
-        h1 { margin: 10px 0; text-shadow: 0 0 10px #0FF; }
-        .stats { font-size: 24px; margin-bottom: 10px; }
-        canvas { 
-            border: 4px solid #F0F; 
-            box-shadow: 0 0 30px #F0F; 
-            background: #111; 
-            cursor: none;
-        }
-        .controls { color: #666; margin-top: 10px; font-size: 14px; }
+        body { background: #000; color: #0ff; font-family: 'Courier New', Courier, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        #game-container { position: relative; border: 4px solid #f0f; box-shadow: 0 0 20px #f0f; }
+        canvas { background: #111; display: block; }
+        #overlay { position: absolute; top: 0; left: 0; width: 400px; height: 600px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); cursor: pointer; text-align: center; }
+        .ui { position: absolute; top: -40px; width: 100%; display: flex; justify-content: space-between; font-size: 20px; }
     </style>
 </head>
 <body>
 
-    <h1>NEON STREAK</h1>
-    <div class="stats">LIVES: <span id="lives">3</span> | SCORE: <span id="score">0</span></div>
-    
-    <canvas id="gameCanvas" width="400" height="600"></canvas>
-    
-    <div class="controls">LEFT / RIGHT ARROWS TO MOVE</div>
+    <div id="game-container">
+        <div class="ui">
+            <span>LIVES: <b id="lives">3</b></span>
+            <span>SCORE: <b id="score">0</b></span>
+        </div>
+        <canvas id="road" width="400" height="600"></canvas>
+        <div id="overlay">
+            <h1>NEON STREAK</h1>
+            <p>PRESS ANY KEY OR CLICK TO START</p>
+        </div>
+    </div>
 
 <script>
-/** @type {HTMLCanvasElement} */
-const canvas = document.getElementById("gameCanvas");
+const canvas = document.getElementById("road");
 const ctx = canvas.getContext("2d");
+const overlay = document.getElementById("overlay");
 
-// --- Game Constants & State ---
-const lanes = [100, 200, 300];
-let playerLane = 1;
-let lives = 3;
+// Game State
+let active = false;
 let score = 0;
-let speed = 6;
-let enemyY = -150;
-let enemyLane = Math.floor(Math.random() * 3);
-let gameActive = true;
-let laneOffset = 0;
+let lives = 3;
+let speed = 5;
+let playerLane = 1; 
+const lanes = [100, 200, 300];
 
-// --- Audio Engine (Web Audio API) ---
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let engineOsc = null;
+let enemy = { x: lanes[Math.floor(Math.random()*3)], y: -100 };
+let lineOffset = 0;
 
-function initAudio() {
-    if (engineOsc) return; // Already started
-    
-    // Engine Hum (Low sawtooth)
-    engineOsc = audioCtx.createOscillator();
-    const engineGain = audioCtx.createGain();
-    engineOsc.type = 'sawtooth';
-    engineOsc.frequency.setValueAtTime(55, audioCtx.currentTime); 
-    engineGain.gain.setValueAtTime(0.05, audioCtx.currentTime);
-    
-    engineOsc.connect(engineGain);
-    engineGain.connect(audioCtx.destination);
-    engineOsc.start();
-}
+// Audio
+let audioCtx, engine;
 
-function playHorn() {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
-    
-    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-    
-    osc.connect(gain);
+function setupAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    engine = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    engine.type = 'sawtooth';
+    engine.frequency.value = 50;
+    gain.gain.value = 0.05;
+    engine.connect(gain);
     gain.connect(audioCtx.destination);
-    
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.3);
+    engine.start();
 }
 
-// --- Input Handling ---
-window.addEventListener("keydown", (e) => {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    initAudio();
-
-    if (e.key === "ArrowLeft" && playerLane > 0) playerLane--;
-    if (e.key === "ArrowRight" && playerLane < 2) playerLane++;
-});
-
-// --- Drawing Helpers ---
-function drawCar(x, y, bodyColor, detailColor) {
-    const carW = 40;
-    const carH = 70;
-    
-    ctx.save();
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = bodyColor;
-
-    // Wheels (4 black rectangles)
-    ctx.fillStyle = "#000";
-    ctx.fillRect(x - 25, y + 10, 10, 18); // Top Left
-    ctx.fillRect(x + 15, y + 10, 10, 18); // Top Right
-    ctx.fillRect(x - 25, y + 45, 10, 18); // Bottom Left
-    ctx.fillRect(x + 15, y + 45, 10, 18); // Bottom Right
-
-    // Main Body
-    ctx.fillStyle = bodyColor;
-    ctx.fillRect(x - 20, y, carW, carH);
-
-    // Windshield / Roof
-    ctx.fillStyle = detailColor;
-    ctx.fillRect(x - 15, y + 15, 30, 20);
-
-    ctx.restore();
+function beep() {
+    if(!audioCtx) return;
+    let osc = audioCtx.createOscillator();
+    let g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
 }
 
-// --- Main Loop ---
+// Drawing Car
+function drawCar(x, y, color) {
+    // Wheels
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x-22, y+10, 8, 15); // TL
+    ctx.fillRect(x+14, y+10, 8, 15); // TR
+    ctx.fillRect(x-22, y+45, 8, 15); // BL
+    ctx.fillRect(x+14, y+45, 8, 15); // BR
+    
+    // Body
+    ctx.fillStyle = color;
+    ctx.fillRect(x-18, y, 36, 70);
+    
+    // Windshield
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillRect(x-12, y+12, 24, 15);
+}
+
 function update() {
-    if (!gameActive) return;
+    if (!active) return;
 
-    // 1. Move Environment
-    laneOffset += speed;
-    enemyY += speed;
-    speed += 0.001; // Tiny speed increment
+    // Logic
+    lineOffset += speed;
+    enemy.y += speed;
+    speed += 0.001;
 
-    // 2. Score & Horn (When enemy passes)
-    if (enemyY > canvas.height) {
-        enemyY = -150;
-        enemyLane = Math.floor(Math.random() * 3);
+    if (enemy.y > 600) {
+        enemy.y = -100;
+        enemy.x = lanes[Math.floor(Math.random()*3)];
         score++;
         document.getElementById("score").innerText = score;
-        playHorn();
-        
-        // Slightly increase engine pitch as you go faster
-        if(engineOsc) engineOsc.frequency.value = 55 + (speed * 2);
+        beep();
     }
 
-    // 3. Collision Logic
-    if (enemyLane === playerLane && enemyY > 430 && enemyY < 570) {
+    // Collision
+    if (enemy.x === lanes[playerLane] && enemy.y > 430 && enemy.y < 570) {
         lives--;
         document.getElementById("lives").innerText = lives;
-        enemyY = -150;
-        enemyLane = Math.floor(Math.random() * 3);
-        
+        enemy.y = -200;
         if (lives <= 0) {
-            gameActive = false;
-            alert("GAME OVER! Final Score: " + score);
+            alert("GAME OVER! SCORE: " + score);
             location.reload();
         }
     }
 
-    draw();
-    requestAnimationFrame(update);
-}
+    // Render
+    ctx.fillStyle = "#111"; // Road
+    ctx.fillRect(0, 0, 400, 600);
+    
+    // Shoulder lines
+    ctx.fillStyle = "#f0f";
+    ctx.fillRect(70, 0, 5, 600);
+    ctx.fillRect(325, 0, 5, 600);
 
-function draw() {
-    // Clear Canvas
-    ctx.fillStyle = "#111";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Draw Road Background
-    ctx.fillStyle = "#222";
-    ctx.fillRect(75, 0, 250, canvas.height);
-
-    // Draw Animated Lane Markers
-    ctx.strokeStyle = "#FFFF00";
-    ctx.setLineDash([30, 30]);
-    ctx.lineDashOffset = -laneOffset;
+    // Dashed Lines
+    ctx.strokeStyle = "#ff0";
+    ctx.setLineDash([40, 40]);
+    ctx.lineDashOffset = -lineOffset;
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(150, 0); ctx.lineTo(150, 600);
     ctx.moveTo(250, 0); ctx.lineTo(250, 600);
     ctx.stroke();
 
-    // Draw Player
-    drawCar(lanes[playerLane], 500, "#FF0066", "#FF99CC");
+    drawCar(lanes[playerLane], 500, "#f06"); // Player
+    drawCar(enemy.x, enemy.y, "#0ff"); // Enemy
 
-    // Draw Enemy
-    drawCar(lanes[enemyLane], enemyY, "#00FFFF", "#99FFFF");
+    requestAnimationFrame(update);
 }
 
-// Start Game
-update();
+// Interaction
+const start = () => {
+    if (active) return;
+    active = true;
+    overlay.style.display = "none";
+    setupAudio();
+    update();
+};
+
+window.addEventListener("keydown", (e) => {
+    start();
+    if (e.key === "ArrowLeft" && playerLane > 0) playerLane--;
+    if (e.key === "ArrowRight" && playerLane < 2) playerLane++;
+});
+overlay.addEventListener("click", start);
+
 </script>
 </body>
 </html>
