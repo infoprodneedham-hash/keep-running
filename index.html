@@ -96,8 +96,59 @@ function update() {
         }
     }
 
-    draw();
-    requestAnimationFrame(update);
+   function draw() {
+    // 1. Background
+    ctx.fillStyle = "#222";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 2. Road & Moving Lane Markers
+    ctx.strokeStyle = "#FFFF00";
+    ctx.setLineDash([20, 20]);
+    // This offset creates the illusion of movement
+    ctx.lineDashOffset = -(Date.now() / 10) % 40; 
+    ctx.beginPath();
+    ctx.moveTo(150, 0); ctx.lineTo(150, 600);
+    ctx.moveTo(250, 0); ctx.lineTo(250, 600);
+    ctx.stroke();
+
+    // 3. Draw Player Car
+    drawCar(lanes[playerLane], 500, "#FF0066", "#FF99CC");
+
+    // 4. Draw Enemy Car
+    drawCar(lanes[enemyLane], enemyY, "#00FFFF", "#99FFFF");
+}
+
+function drawCar(x, y, bodyColor, detailColor) {
+    const carWidth = 40;
+    const carHeight = 70;
+    const wheelWidth = 10;
+    const wheelHeight = 15;
+
+    ctx.save();
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = bodyColor;
+
+    // Draw 4 Wheels (Black with a tiny highlight)
+    ctx.fillStyle = "#111";
+    // Top Left
+    ctx.fillRect(x - 25, y + 5, wheelWidth, wheelHeight);
+    // Top Right
+    ctx.fillRect(x + 15, y + 5, wheelWidth, wheelHeight);
+    // Bottom Left
+    ctx.fillRect(x - 25, y + 50, wheelWidth, wheelHeight);
+    // Bottom Right
+    ctx.fillRect(x + 15, y + 50, wheelWidth, wheelHeight);
+
+    // Draw Car Body
+    ctx.fillStyle = bodyColor;
+    ctx.fillRect(x - 20, y, carWidth, carHeight);
+
+    // Draw Windshield (Detail)
+    ctx.fillStyle = detailColor;
+    ctx.fillRect(x - 15, y + 15, 30, 15);
+
+    ctx.restore();
+}
 }
 
 function draw() {
